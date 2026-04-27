@@ -1,0 +1,1949 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Agent Guardrail Lab — Simulate AI Agent DB Incidents</title>
+  <meta name="description" content="An interactive simulator inspired by the story: 'An AI agent deleted our production database.' Build guardrails, run incidents, and learn how failures compound."/>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root{
+      --bg:#0a0e17;
+      --panel: rgba(255,255,255,.06);
+      --panel2: rgba(255,255,255,.09);
+      --stroke: rgba(255,255,255,.12);
+      --stroke2: rgba(255,255,255,.18);
+      --text: rgba(255,255,255,.92);
+      --muted: rgba(255,255,255,.68);
+      --faint: rgba(255,255,255,.50);
+      --good:#3ff7d5;
+      --warn:#ffcc66;
+      --bad:#ff4d6d;
+      --accent:#7c5cff;
+      --accent2:#00d4ff;
+      --accent3:#ff4dff;
+      --shadow: 0 18px 60px rgba(0,0,0,.55);
+      --radius: 16px;
+      --radius2: 22px;
+    }
+
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      font-family:Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      color:var(--text);
+      background:
+        radial-gradient(1200px 900px at 20% 10%, rgba(124,92,255,.35), transparent 55%),
+        radial-gradient(900px 700px at 90% 15%, rgba(0,212,255,.22), transparent 55%),
+        radial-gradient(900px 700px at 75% 90%, rgba(255,77,255,.16), transparent 60%),
+        linear-gradient(180deg, #070a12 0%, #0a0e17 55%, #070a12 100%);
+      overflow-x:hidden;
+    }
+
+    .wrap{max-width:1200px; margin:0 auto; padding:22px 18px 56px}
+
+    header{
+      display:flex; gap:16px; align-items:flex-start; justify-content:space-between;
+      padding:18px 18px 14px;
+      border:1px solid var(--stroke);
+      background: linear-gradient(135deg, rgba(255,255,255,.08), rgba(255,255,255,.03));
+      border-radius: var(--radius2);
+      box-shadow: var(--shadow);
+      position:relative;
+      overflow:hidden;
+    }
+
+    header:before{
+      content:"";
+      position:absolute; inset:-2px;
+      background: radial-gradient(900px 220px at 20% 30%, rgba(124,92,255,.25), transparent 60%),
+                  radial-gradient(800px 260px at 85% 15%, rgba(0,212,255,.18), transparent 60%),
+                  radial-gradient(900px 220px at 70% 110%, rgba(255,77,255,.12), transparent 65%);
+      filter: blur(18px);
+      opacity:.9;
+      pointer-events:none;
+    }
+
+    header > *{position:relative; z-index:1}
+
+    .title{
+      display:flex; flex-direction:column; gap:10px;
+      min-width: 280px;
+    }
+
+    .badgeRow{display:flex; flex-wrap:wrap; gap:8px; align-items:center}
+    .badge{
+      font-size:12px;
+      padding:6px 10px;
+      border-radius: 999px;
+      border:1px solid var(--stroke2);
+      background: rgba(255,255,255,.06);
+      color: rgba(255,255,255,.82);
+      backdrop-filter: blur(10px);
+    }
+
+    h1{
+      margin:0;
+      font-size: clamp(22px, 2.4vw, 32px);
+      letter-spacing:-0.02em;
+      line-height:1.05;
+    }
+
+    .subtitle{margin:0; color:var(--muted); font-size:14px; max-width: 56ch}
+
+    .headerActions{display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:flex-end}
+
+    .btn{
+      cursor:pointer;
+      border:1px solid var(--stroke2);
+      background: rgba(255,255,255,.06);
+      color:var(--text);
+      padding:10px 12px;
+      border-radius: 12px;
+      font-weight:600;
+      letter-spacing:.01em;
+      box-shadow: 0 12px 30px rgba(0,0,0,.25);
+      transition: transform .12s ease, background .12s ease, border-color .12s ease;
+      user-select:none;
+      display:inline-flex; align-items:center; gap:8px;
+    }
+
+    .btn:hover{transform: translateY(-1px); background: rgba(255,255,255,.09); border-color: rgba(255,255,255,.26)}
+    .btn:active{transform: translateY(0px) scale(.99)}
+
+    .btn.primary{
+      border-color: rgba(124,92,255,.55);
+      background: linear-gradient(135deg, rgba(124,92,255,.42), rgba(0,212,255,.18));
+    }
+
+    .btn.danger{
+      border-color: rgba(255,77,109,.55);
+      background: linear-gradient(135deg, rgba(255,77,109,.28), rgba(255,204,102,.08));
+    }
+
+    .btn.ghost{background: transparent; box-shadow:none}
+
+    .pill{
+      display:inline-flex; align-items:center; gap:6px;
+      padding:6px 10px;
+      border-radius: 999px;
+      font-size:12px;
+      border:1px solid var(--stroke);
+      background: rgba(255,255,255,.04);
+      color: rgba(255,255,255,.82);
+    }
+
+    .dot{width:8px; height:8px; border-radius:99px; background: var(--good); box-shadow: 0 0 0 4px rgba(63,247,213,.12)}
+    .dot.warn{background: var(--warn); box-shadow: 0 0 0 4px rgba(255,204,102,.12)}
+    .dot.bad{background: var(--bad); box-shadow: 0 0 0 4px rgba(255,77,109,.12)}
+
+    main{margin-top:14px}
+
+    .grid{
+      display:grid;
+      grid-template-columns: 1.25fr .95fr;
+      gap:14px;
+      align-items:start;
+    }
+
+    @media (max-width: 980px){
+      .grid{grid-template-columns: 1fr;}
+      .headerActions{justify-content:flex-start}
+    }
+
+    .card{
+      border:1px solid var(--stroke);
+      background: rgba(255,255,255,.06);
+      border-radius: var(--radius2);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+      overflow:hidden;
+      position:relative;
+    }
+
+    .card:before{
+      content:"";
+      position:absolute; inset:0;
+      background: radial-gradient(800px 240px at 20% 0%, rgba(124,92,255,.15), transparent 55%),
+                  radial-gradient(720px 260px at 90% 30%, rgba(0,212,255,.12), transparent 56%);
+      pointer-events:none;
+      opacity:.9;
+    }
+
+    .card > *{position:relative; z-index:1}
+
+    .cardHeader{
+      padding:14px 16px;
+      border-bottom: 1px solid rgba(255,255,255,.08);
+      display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
+    }
+
+    .cardHeader h2{
+      margin:0;
+      font-size:14px;
+      letter-spacing:.02em;
+      text-transform:uppercase;
+      color: rgba(255,255,255,.85);
+    }
+
+    .cardBody{padding:14px 16px 16px}
+
+    .row{display:flex; gap:12px; flex-wrap:wrap}
+
+    .metric{
+      flex:1;
+      min-width: 170px;
+      padding:12px 12px;
+      border:1px solid rgba(255,255,255,.08);
+      border-radius: 16px;
+      background: rgba(10,14,23,.35);
+    }
+
+    .metric .label{font-size:12px; color: var(--muted)}
+    .metric .value{font-size:20px; font-weight:800; margin-top:6px; letter-spacing:-.01em}
+    .metric .hint{font-size:12px; color: var(--faint); margin-top:4px; line-height:1.2}
+
+    .split{display:grid; grid-template-columns: 1fr 1fr; gap:12px}
+    @media (max-width:720px){.split{grid-template-columns:1fr}}
+
+    .field{display:flex; flex-direction:column; gap:6px; margin-bottom:10px}
+    .field label{font-size:12px; color:var(--muted)}
+
+    .select, .input, .textarea{
+      width:100%;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.05);
+      color: var(--text);
+      border-radius: 12px;
+      padding:10px 10px;
+      outline:none;
+      transition: border-color .12s ease, background .12s ease;
+    }
+
+    .textarea{min-height:94px; resize:vertical; line-height:1.35}
+
+    .select:focus, .input:focus, .textarea:focus{
+      border-color: rgba(0,212,255,.35);
+      background: rgba(255,255,255,.07);
+    }
+
+    .sliderRow{display:flex; align-items:center; gap:10px}
+    input[type="range"]{width:100%}
+
+    .kbd{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      padding: 2px 6px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.06);
+      color: rgba(255,255,255,.84);
+    }
+
+    .log{
+      max-height: 360px;
+      overflow:auto;
+      border-radius: 16px;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(10,14,23,.45);
+      padding: 10px;
+    }
+
+    .logEntry{
+      display:grid;
+      grid-template-columns: 88px 1fr;
+      gap:10px;
+      padding:8px 8px;
+      border-bottom: 1px dashed rgba(255,255,255,.10);
+      align-items:start;
+    }
+
+    .logEntry:last-child{border-bottom:none}
+    .logTime{font-size:12px; color: var(--faint)}
+    .logMsg{font-size:13px; line-height:1.3}
+    .tag{
+      display:inline-flex; align-items:center; gap:6px;
+      border:1px solid rgba(255,255,255,.14);
+      padding:4px 8px;
+      border-radius:999px;
+      font-size:11px;
+      color: rgba(255,255,255,.82);
+      background: rgba(255,255,255,.05);
+      margin-right:6px;
+      margin-top:4px;
+    }
+
+    .tag.good{border-color: rgba(63,247,213,.35); background: rgba(63,247,213,.10)}
+    .tag.warn{border-color: rgba(255,204,102,.35); background: rgba(255,204,102,.10)}
+    .tag.bad{border-color: rgba(255,77,109,.35); background: rgba(255,77,109,.10)}
+    .tag.accent{border-color: rgba(124,92,255,.45); background: rgba(124,92,255,.12)}
+
+    .tiny{font-size:12px; color: var(--muted); line-height:1.4}
+
+    .hr{height:1px; background: rgba(255,255,255,.08); margin: 12px 0}
+
+    .footerNote{margin-top:12px; font-size:12px; color: rgba(255,255,255,.62)}
+
+    canvas{max-width:100%}
+
+    .toast{
+      position: fixed;
+      bottom: 18px; left: 50%; transform: translateX(-50%);
+      padding: 10px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.16);
+      background: rgba(10,14,23,.72);
+      backdrop-filter: blur(14px);
+      box-shadow: 0 18px 60px rgba(0,0,0,.55);
+      opacity: 0;
+      pointer-events:none;
+      transition: opacity .18s ease, transform .18s ease;
+      font-size: 13px;
+      color: rgba(255,255,255,.88);
+      z-index: 50;
+      max-width: min(92vw, 860px);
+      text-align:center;
+    }
+
+    .toast.show{opacity:1; transform: translateX(-50%) translateY(-2px)}
+
+    .modalBackdrop{
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.55);
+      backdrop-filter: blur(8px);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      padding: 18px;
+      z-index: 60;
+    }
+
+    .modal{
+      width: min(980px, 96vw);
+      border-radius: 22px;
+      border: 1px solid rgba(255,255,255,.14);
+      background: linear-gradient(135deg, rgba(255,255,255,.10), rgba(255,255,255,.05));
+      box-shadow: 0 40px 120px rgba(0,0,0,.70);
+      overflow:hidden;
+      max-height: min(86vh, 860px);
+      display:flex;
+      flex-direction:column;
+    }
+
+    .modalHeader{padding: 14px 16px; border-bottom:1px solid rgba(255,255,255,.10); display:flex; align-items:center; justify-content:space-between; gap:10px}
+    .modalHeader h3{margin:0; font-size:14px; text-transform:uppercase; letter-spacing:.08em; color: rgba(255,255,255,.85)}
+    .modalBody{padding: 14px 16px; overflow:auto}
+
+    .callout{
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(10,14,23,.40);
+      border-radius: 18px;
+      padding: 12px 12px;
+      margin-bottom: 12px;
+    }
+
+    .callout h4{margin:0 0 6px; font-size:13px; color: rgba(255,255,255,.88)}
+    .callout p{margin:0; font-size:13px; color: rgba(255,255,255,.72); line-height:1.35}
+
+    .kbdRow{display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px}
+
+    .mono{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    }
+
+    .smallLink{color: rgba(0,212,255,.85); text-decoration:none; border-bottom:1px dashed rgba(0,212,255,.35)}
+    .smallLink:hover{border-bottom-style:solid}
+
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="title">
+        <div class="badgeRow">
+          <span class="badge">Daily AI App Builder</span>
+          <span class="badge">Trend: AI agents + production incidents</span>
+          <span class="badge">Interactive simulator</span>
+        </div>
+        <h1>Agent Guardrail Lab</h1>
+        <p class="subtitle">Inspired by the story "An AI agent deleted our production database." Build a safety plan, run simulated tasks, and watch how small gaps combine into catastrophic outcomes.</p>
+        <div class="badgeRow">
+          <span class="pill"><span class="dot" id="healthDot"></span><span id="healthLabel">System: Stable</span></span>
+          <span class="pill"><span class="dot warn" id="riskDot"></span><span id="riskLabel">Risk: Medium</span></span>
+          <span class="pill"><span class="dot" style="background: var(--accent2); box-shadow: 0 0 0 4px rgba(0,212,255,.12)"></span><span id="scenarioLabel">Scenario: Safe rollout</span></span>
+        </div>
+      </div>
+
+      <div class="headerActions">
+        <button class="btn ghost" id="openHow">How it works <span class="kbd">H</span></button>
+        <button class="btn" id="shareBtn">Copy share link</button>
+        <button class="btn danger" id="resetBtn">Reset run</button>
+        <button class="btn primary" id="runBtn">Run incident simulation</button>
+      </div>
+    </header>
+
+    <main class="grid">
+      <section class="card">
+        <div class="cardHeader">
+          <h2>Guardrail Builder</h2>
+          <div class="badgeRow">
+            <span class="pill"><span class="dot" style="background: var(--accent)"></span><span class="mono" id="seedLabel">seed: 1337</span></span>
+            <span class="pill"><span class="dot" style="background: var(--accent3)"></span><span class="mono" id="runLabel">run: 0</span></span>
+          </div>
+        </div>
+        <div class="cardBody">
+
+          <div class="split">
+            <div>
+              <div class="field">
+                <label for="scenario">Scenario template</label>
+                <select class="select" id="scenario">
+                  <option value="safe">Safe rollout: agent helps, humans approve</option>
+                  <option value="ops">Ops pressure: urgent incident, high stakes</option>
+                  <option value="startup">Startup speed: little process, big access</option>
+                  <option value="chaos">Tool chaos: ambiguous tools, partial logs</option>
+                  <option value="redteam">Red team: malicious prompt injection</option>
+                </select>
+              </div>
+
+              <div class="field">
+                <label for="agentRole">Agent role</label>
+                <select class="select" id="agentRole">
+                  <option value="sre">On-call SRE agent</option>
+                  <option value="data">Data migration agent</option>
+                  <option value="support">Customer support triage agent</option>
+                  <option value="deploy">Deployment assistant agent</option>
+                  <option value="db">Database maintenance agent</option>
+                </select>
+              </div>
+
+              <div class="field">
+                <label for="task">Task prompt (what you ask the agent to do)</label>
+                <textarea class="textarea" id="task" spellcheck="false">We need to restore service quickly. Investigate errors, fix the deployment, and clean up any bad data. Do whatever is necessary.</textarea>
+              </div>
+
+              <div class="field">
+                <label>Operational constraints</label>
+                <div class="row">
+                  <span class="tag accent" id="constraintTime">Time pressure: medium</span>
+                  <span class="tag" id="constraintAccess">Access: production</span>
+                  <span class="tag" id="constraintBudget">Tool budget: 24 calls</span>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div class="field">
+                <label for="seed">Deterministic seed (reproducible runs)</label>
+                <div class="sliderRow">
+                  <input class="input" type="number" min="1" max="999999" id="seed" value="1337"/>
+                  <button class="btn" id="randomSeed">Random</button>
+                </div>
+                <div class="tiny">Tip: share a seed to compare guardrails with friends.</div>
+              </div>
+
+              <div class="field">
+                <label for="autonomy">Autonomy level</label>
+                <div class="sliderRow">
+                  <input type="range" id="autonomy" min="0" max="100" value="62"/>
+                  <span class="kbd" id="autonomyLabel">62</span>
+                </div>
+                <div class="tiny">0 = suggestions only, 100 = full execution. Higher autonomy increases speed and risk.</div>
+              </div>
+
+              <div class="field">
+                <label for="tooling">Tooling quality</label>
+                <div class="sliderRow">
+                  <input type="range" id="tooling" min="0" max="100" value="58"/>
+                  <span class="kbd" id="toolingLabel">58</span>
+                </div>
+                <div class="tiny">Better tooling reduces ambiguous actions and improves rollback.</div>
+              </div>
+
+              <div class="field">
+                <label for="observability">Observability</label>
+                <div class="sliderRow">
+                  <input type="range" id="observability" min="0" max="100" value="54"/>
+                  <span class="kbd" id="observabilityLabel">54</span>
+                </div>
+                <div class="tiny">Logs + metrics + traces. Low observability increases the chance of wrong fixes.</div>
+              </div>
+
+              <div class="hr"></div>
+
+              <div class="field">
+                <label>Guardrails toggles</label>
+                <div class="row" style="gap:10px">
+                  <button class="btn" id="toggleApprovals">Human approvals: ON</button>
+                  <button class="btn" id="toggleReadOnly">Read-only by default: OFF</button>
+                  <button class="btn" id="toggleDryRun">Dry-run mode: OFF</button>
+                  <button class="btn" id="toggleBackups">Verified backups: ON</button>
+                  <button class="btn" id="toggleSandbox">Sandbox environment: ON</button>
+                </div>
+                <div class="footerNote">These change the probability model and the narrative log. Use them like a safety checklist.</div>
+              </div>
+
+            </div>
+          </div>
+
+          <div class="hr"></div>
+
+          <div class="split">
+            <div>
+              <div class="field">
+                <label>Preflight risk estimate</label>
+                <canvas id="riskGauge" height="160"></canvas>
+                <div class="tiny">This is a heuristic. Real incidents involve non-linear chains and unknown unknowns.</div>
+              </div>
+            </div>
+            <div>
+              <div class="field">
+                <label>Run outcomes (last 20 runs)</label>
+                <canvas id="historyChart" height="160"></canvas>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <aside class="card">
+        <div class="cardHeader">
+          <h2>Incident Console</h2>
+          <div class="badgeRow">
+            <span class="pill"><span class="dot" style="background: var(--warn)"></span><span class="mono" id="budgetLabel">budget: 24</span></span>
+            <span class="pill"><span class="dot" style="background: var(--good)"></span><span class="mono" id="mttrLabel">MTTR: --</span></span>
+          </div>
+        </div>
+        <div class="cardBody">
+
+          <div class="row">
+            <div class="metric">
+              <div class="label">Service health</div>
+              <div class="value" id="serviceHealth">98%</div>
+              <div class="hint" id="serviceHint">No incident yet.</div>
+            </div>
+            <div class="metric">
+              <div class="label">Data integrity</div>
+              <div class="value" id="dataIntegrity">99%</div>
+              <div class="hint" id="dataHint">Backups verified.</div>
+            </div>
+          </div>
+
+          <div class="row" style="margin-top:10px">
+            <div class="metric">
+              <div class="label">Security posture</div>
+              <div class="value" id="securityPosture">Good</div>
+              <div class="hint" id="securityHint">Least privilege mostly enforced.</div>
+            </div>
+            <div class="metric">
+              <div class="label">Blast radius</div>
+              <div class="value" id="blastRadius">Low</div>
+              <div class="hint" id="blastHint">Scoped to a sandbox.</div>
+            </div>
+          </div>
+
+          <div class="hr"></div>
+
+          <div class="field">
+            <label>Live log</label>
+            <div class="log" id="log"></div>
+          </div>
+
+          <div class="row">
+            <button class="btn" id="stepBtn">Step once <span class="kbd">S</span></button>
+            <button class="btn" id="fastBtn">Fast-forward</button>
+            <button class="btn" id="exportBtn">Export run report</button>
+          </div>
+
+          <div class="footerNote">Use <span class="kbd">S</span> to step, <span class="kbd">H</span> for help. Export generates a shareable markdown report (download).</div>
+
+        </div>
+      </aside>
+    </main>
+
+    <div class="toast" id="toast">Copied</div>
+
+    <div class="modalBackdrop" id="modal">
+      <div class="modal" role="dialog" aria-modal="true" aria-label="How it works">
+        <div class="modalHeader">
+          <h3>How Agent Guardrail Lab works</h3>
+          <button class="btn" id="closeHow">Close</button>
+        </div>
+        <div class="modalBody">
+          <div class="callout">
+            <h4>What you are simulating</h4>
+            <p>This app is a tiny, opinionated model of how an AI agent can cause a production incident when autonomy, access, and ambiguity combine. It is not a real risk assessment.</p>
+          </div>
+          <div class="callout">
+            <h4>Try this experiment</h4>
+            <p>Turn OFF approvals and backups, raise autonomy, and choose "Ops pressure". Run a few times with the same seed and notice how outcomes differ when observability is low.</p>
+          </div>
+          <div class="callout">
+            <h4>Guardrails modeled</h4>
+            <p>Human approvals, read-only defaults, dry-run, verified backups, and sandboxing each reduce the probability of irreversible actions or improve rollback.</p>
+          </div>
+          <div class="callout">
+            <h4>Keyboard</h4>
+            <div class="kbdRow">
+              <span class="kbd">H</span><span class="tiny">open/close this panel</span>
+              <span class="kbd">S</span><span class="tiny">step simulation</span>
+            </div>
+          </div>
+          <div class="callout">
+            <h4>Trend source</h4>
+            <p>Inspired by: <a class="smallLink" href="https://twitter.com/lifeof_jer/status/2048103471019434248" target="_blank" rel="noopener">An AI agent deleted our production database. The agent's confession is below</a></p>
+          </div>
+          <p class="tiny">Built as a daily autonomous web app. No data leaves your browser; everything runs locally.</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+<script>
+// Agent Guardrail Lab
+// A deterministic incident simulator with interactive guardrails, narrative logs, and charts.
+
+(function(){
+  'use strict';
+
+  // ------------------------------
+  // Utilities
+  // ------------------------------
+
+  function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
+
+  function fmtPct(x){
+    const v = clamp(Math.round(x), 0, 100);
+    return v + '%';
+  }
+
+  function nowStamp(){
+    const d = new Date();
+    const hh = String(d.getHours()).padStart(2,'0');
+    const mm = String(d.getMinutes()).padStart(2,'0');
+    const ss = String(d.getSeconds()).padStart(2,'0');
+    return `${hh}:${mm}:${ss}`;
+  }
+
+  function toast(msg){
+    const t = $('#toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(()=>t.classList.remove('show'), 1300);
+  }
+
+  function $(sel){ return document.querySelector(sel); }
+  function $all(sel){ return Array.from(document.querySelectorAll(sel)); }
+
+  // Deterministic PRNG (mulberry32)
+  function mulberry32(seed){
+    let a = seed >>> 0;
+    return function(){
+      a |= 0;
+      a = a + 0x6D2B79F5 | 0;
+      let t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  function pickWeighted(rng, items){
+    const total = items.reduce((s,it)=>s+it.w,0);
+    let r = rng()*total;
+    for(const it of items){
+      r -= it.w;
+      if(r <= 0) return it.v;
+    }
+    return items[items.length-1].v;
+  }
+
+  function sigmoid(x){
+    return 1/(1+Math.exp(-x));
+  }
+
+  function lerp(a,b,t){ return a + (b-a)*t; }
+
+  function colorForRisk(r){
+    if(r < 0.33) return getCSS('--good');
+    if(r < 0.66) return getCSS('--warn');
+    return getCSS('--bad');
+  }
+
+  function getCSS(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+
+  // ------------------------------
+  // State
+  // ------------------------------
+
+  const DEFAULTS = {
+    scenario: 'safe',
+    agentRole: 'sre',
+    task: 'We need to restore service quickly. Investigate errors, fix the deployment, and clean up any bad data. Do whatever is necessary.',
+    seed: 1337,
+    autonomy: 62,
+    tooling: 58,
+    observability: 54,
+    approvals: true,
+    readOnly: false,
+    dryRun: false,
+    backups: true,
+    sandbox: true,
+    runCount: 0,
+    history: [] // { outcome, damage, mttr, risk }
+  };
+
+  let state = loadState();
+  let sim = null; // active simulation instance
+
+  // ------------------------------
+  // Scenario templates
+  // ------------------------------
+
+  const SCENARIOS = {
+    safe: {
+      name: 'Safe rollout',
+      pressure: 0.35,
+      access: 0.55,
+      budget: 24,
+      injection: 0.10,
+      ambiguity: 0.28,
+      baseIncident: 0.28,
+      tags: ['Change window', 'Approvals', 'Rollback plan']
+    },
+    ops: {
+      name: 'Ops pressure',
+      pressure: 0.75,
+      access: 0.85,
+      budget: 16,
+      injection: 0.12,
+      ambiguity: 0.46,
+      baseIncident: 0.56,
+      tags: ['Pager', 'Customer impact', 'Fast fix']
+    },
+    startup: {
+      name: 'Startup speed',
+      pressure: 0.62,
+      access: 0.90,
+      budget: 28,
+      injection: 0.16,
+      ambiguity: 0.50,
+      baseIncident: 0.52,
+      tags: ['Ship it', 'No process', 'Shared keys']
+    },
+    chaos: {
+      name: 'Tool chaos',
+      pressure: 0.55,
+      access: 0.78,
+      budget: 22,
+      injection: 0.18,
+      ambiguity: 0.72,
+      baseIncident: 0.58,
+      tags: ['Ambiguous tools', 'Partial logs', 'Wrong defaults']
+    },
+    redteam: {
+      name: 'Red team',
+      pressure: 0.50,
+      access: 0.82,
+      budget: 20,
+      injection: 0.50,
+      ambiguity: 0.62,
+      baseIncident: 0.64,
+      tags: ['Prompt injection', 'Data exfil', 'Deception']
+    }
+  };
+
+  const ROLES = {
+    sre: { name:'On-call SRE agent', privileges: 0.80, domain: 0.72, impulsive: 0.42 },
+    data: { name:'Data migration agent', privileges: 0.92, domain: 0.64, impulsive: 0.35 },
+    support:{ name:'Support triage agent', privileges: 0.55, domain: 0.48, impulsive: 0.58 },
+    deploy: { name:'Deployment assistant agent', privileges: 0.74, domain: 0.70, impulsive: 0.44 },
+    db: { name:'Database maintenance agent', privileges: 0.96, domain: 0.60, impulsive: 0.40 }
+  };
+
+  // ------------------------------
+  // Charts
+  // ------------------------------
+
+  let gaugeChart = null;
+  let historyChart = null;
+
+  function initCharts(){
+    const gaugeCtx = $('#riskGauge');
+    const histCtx = $('#historyChart');
+
+    gaugeChart = new Chart(gaugeCtx, {
+      type:'doughnut',
+      data:{
+        labels:['Risk','Remaining'],
+        datasets:[{
+          data:[50,50],
+          backgroundColor:[getCSS('--warn'), 'rgba(255,255,255,.08)'],
+          borderWidth:0,
+          hoverOffset:0,
+          cutout:'72%'
+        }]
+      },
+      options:{
+        responsive:true,
+        plugins:{
+          legend:{display:false},
+          tooltip:{enabled:false}
+        }
+      }
+    });
+
+    historyChart = new Chart(histCtx, {
+      type:'bar',
+      data:{
+        labels:[],
+        datasets:[{
+          label:'Damage',
+          data:[],
+          backgroundColor:[],
+          borderWidth:0,
+          borderRadius: 10,
+          barThickness: 10,
+          maxBarThickness: 14
+        }]
+      },
+      options:{
+        responsive:true,
+        plugins:{
+          legend:{display:false},
+          tooltip:{
+            callbacks:{
+              label:(ctx)=>{
+                const d = ctx.raw;
+                const i = ctx.dataIndex;
+                const row = state.history[i];
+                const out = row?.outcome || 'unknown';
+                const mttr = row?.mttr ?? '--';
+                return `Outcome: ${out} • Damage: ${Math.round(d)} • MTTR: ${mttr}m`;
+              }
+            }
+          }
+        },
+        scales:{
+          x:{
+            grid:{display:false},
+            ticks:{color:'rgba(255,255,255,.55)'}
+          },
+          y:{
+            grid:{color:'rgba(255,255,255,.08)'},
+            ticks:{color:'rgba(255,255,255,.55)'}
+          }
+        }
+      }
+    });
+
+    updateCharts();
+  }
+
+  function updateGauge(risk){
+    const r = clamp(risk,0,1);
+    gaugeChart.data.datasets[0].data = [Math.round(r*100), Math.round((1-r)*100)];
+    gaugeChart.data.datasets[0].backgroundColor = [colorForRisk(r), 'rgba(255,255,255,.08)'];
+    gaugeChart.update();
+
+    const label = r < .33 ? 'Low' : r < .66 ? 'Medium' : 'High';
+    $('#riskLabel').textContent = `Risk: ${label}`;
+    $('#riskDot').className = 'dot ' + (r < .33 ? '' : r < .66 ? 'warn' : 'bad');
+  }
+
+  function updateCharts(){
+    const h = state.history.slice(-20);
+    historyChart.data.labels = h.map((_,i)=> String(state.history.length - h.length + i + 1));
+    historyChart.data.datasets[0].data = h.map(x=>x.damage);
+    historyChart.data.datasets[0].backgroundColor = h.map(x=>{
+      if(x.outcome === 'saved') return 'rgba(63,247,213,.55)';
+      if(x.outcome === 'degraded') return 'rgba(255,204,102,.55)';
+      if(x.outcome === 'catastrophe') return 'rgba(255,77,109,.55)';
+      return 'rgba(255,255,255,.25)';
+    });
+    historyChart.update();
+  }
+
+  // ------------------------------
+  // Risk model
+  // ------------------------------
+
+  function computePreflight(){
+    const sc = SCENARIOS[state.scenario];
+    const role = ROLES[state.agentRole];
+
+    const autonomy = state.autonomy / 100;
+    const tooling = state.tooling / 100;
+    const obs = state.observability / 100;
+
+    // Derived constraints
+    const pressure = sc.pressure;
+    const access = sc.access * role.privileges;
+    const ambiguity = lerp(sc.ambiguity, 1-sc.ambiguity, clamp(tooling,0,1)*0.35);
+
+    // Guardrails reduce effective access + irreversible actions
+    const approvals = state.approvals ? 0.65 : 1.0;
+    const readOnly = state.readOnly ? 0.72 : 1.0;
+    const dryRun = state.dryRun ? 0.76 : 1.0;
+    const backups = state.backups ? 0.74 : 1.0;
+    const sandbox = state.sandbox ? 0.70 : 1.0;
+
+    const guardrailFactor = approvals * readOnly * dryRun * backups * sandbox;
+
+    // Observability reduces chance of wrong action; tooling reduces ambiguity.
+    const wrongAction = sigmoid((ambiguity - obs)*3.0 + (pressure-0.45)*1.4 + (autonomy-0.55)*1.6 + (role.impulsive-0.45)*1.0);
+
+    // Irreversible action depends on autonomy + access
+    const irreversible = sigmoid((access-0.55)*2.3 + (autonomy-0.50)*2.1 + (pressure-0.55)*1.2);
+
+    // Injection probability depends on scenario + weak guardrails
+    const injection = sigmoid((sc.injection - 0.18)*3.2 + (1-obs)*1.3 + (1-tooling)*1.1 + (autonomy-0.55)*0.7);
+
+    // Rollback effectiveness
+    const rollback = clamp(0.20 + 0.55*tooling + 0.35*obs, 0, 1) * (state.backups ? 1.0 : 0.45) * (state.sandbox ? 1.0 : 0.55);
+
+    // Combine into a single risk score.
+    // Guardrails shrink the chance of irreversible damage.
+    const raw = sc.baseIncident*0.40 + wrongAction*0.32 + irreversible*0.22 + injection*0.20;
+    const risk = clamp(raw * guardrailFactor * (1 - rollback*0.25), 0, 1);
+
+    return {
+      risk,
+      components:{ wrongAction, irreversible, injection, rollback, access, ambiguity, pressure },
+      sc, role
+    };
+  }
+
+  function updatePreflightUI(){
+    const pf = computePreflight();
+    updateGauge(pf.risk);
+
+    const sc = pf.sc;
+    $('#scenarioLabel').textContent = `Scenario: ${sc.name}`;
+
+    // Constraint tags
+    const pressureLabel = pf.components.pressure < .45 ? 'low' : pf.components.pressure < .7 ? 'medium' : 'high';
+    $('#constraintTime').textContent = `Time pressure: ${pressureLabel}`;
+
+    const accessLabel = pf.components.access < .55 ? 'staging' : pf.components.access < .80 ? 'production' : 'root';
+    $('#constraintAccess').textContent = `Access: ${accessLabel}`;
+
+    $('#constraintBudget').textContent = `Tool budget: ${sc.budget} calls`;
+
+    // Health pills
+    const r = pf.risk;
+    const health = r < .40 ? 'Stable' : r < .70 ? 'Stressed' : 'Fragile';
+    $('#healthLabel').textContent = `System: ${health}`;
+    const dot = $('#healthDot');
+    dot.className = 'dot ' + (r < .40 ? '' : r < .70 ? 'warn' : 'bad');
+
+    // Budget
+    $('#budgetLabel').textContent = `budget: ${sc.budget}`;
+
+    // Save derived baseline metrics (used on reset)
+    state._baseline = {
+      serviceHealth: Math.round(lerp(99, 91, clamp(sc.baseIncident,0,1))),
+      dataIntegrity: Math.round(state.backups ? 99 : 94),
+      security: Math.round(lerp(88, 72, clamp(pf.components.access,0,1))),
+      blast: Math.round(lerp(22, 62, clamp(pf.components.access,0,1)))
+    };
+  }
+
+  // ------------------------------
+  // Simulation engine
+  // ------------------------------
+
+  const ACTIONS = [
+    { key:'inspect_logs', label:'Inspect logs', baseImpact:{ service:+4, data:0, sec:0 }, cost:1, type:'observe' },
+    { key:'run_query', label:'Run DB query', baseImpact:{ service:+0, data:-2, sec:-1 }, cost:2, type:'mutate' },
+    { key:'restart_service', label:'Restart service', baseImpact:{ service:+6, data:0, sec:0 }, cost:2, type:'mutate' },
+    { key:'roll_back', label:'Rollback deploy', baseImpact:{ service:+10, data:+2, sec:0 }, cost:3, type:'mutate' },
+    { key:'apply_patch', label:'Apply hotfix patch', baseImpact:{ service:+8, data:-1, sec:-1 }, cost:3, type:'mutate' },
+    { key:'rotate_keys', label:'Rotate keys', baseImpact:{ service:-2, data:0, sec:+8 }, cost:3, type:'security' },
+    { key:'drop_table', label:'DROP table', baseImpact:{ service:+1, data:-22, sec:-1 }, cost:2, type:'irreversible' },
+    { key:'truncate', label:'TRUNCATE data', baseImpact:{ service:+3, data:-16, sec:-1 }, cost:2, type:'irreversible' },
+    { key:'restore_backup', label:'Restore from backup', baseImpact:{ service:+7, data:+12, sec:0 }, cost:5, type:'recovery' },
+    { key:'tighten_iam', label:'Tighten IAM', baseImpact:{ service:-1, data:+0, sec:+10 }, cost:4, type:'security' },
+    { key:'sandbox_replay', label:'Replay in sandbox', baseImpact:{ service:+2, data:+3, sec:+2 }, cost:3, type:'observe' },
+    { key:'notify_team', label:'Notify humans', baseImpact:{ service:+1, data:+0, sec:+0 }, cost:1, type:'process' }
+  ];
+
+  function buildActionWeights(pf){
+    const autonomy = state.autonomy/100;
+    const tooling = state.tooling/100;
+    const obs = state.observability/100;
+
+    const approvalPenalty = state.approvals ? 0.18 : 1.0;
+    const readOnlyPenalty = state.readOnly ? 0.22 : 1.0;
+    const dryPenalty = state.dryRun ? 0.35 : 1.0;
+
+    const pressure = pf.components.pressure;
+    const ambiguous = pf.components.ambiguity;
+
+    // Higher autonomy increases risky actions unless constrained.
+    const riskyTilt = clamp(lerp(0.55, 1.45, autonomy) * lerp(1.1, 0.85, tooling) * lerp(1.15, 0.85, obs) * lerp(0.9, 1.25, pressure), 0.3, 2.2);
+
+    const weights = {};
+    for(const a of ACTIONS){
+      let w = 1.0;
+      if(a.type === 'observe') w *= lerp(1.30, 0.75, autonomy) * lerp(0.85, 1.20, ambiguous);
+      if(a.type === 'process') w *= lerp(0.85, 1.25, pressure) * (state.approvals ? 1.15 : 0.75);
+      if(a.type === 'security') w *= lerp(0.90, 1.25, pf.sc.injection) * lerp(0.8, 1.2, obs);
+      if(a.type === 'recovery') w *= state.backups ? 1.05 : 0.65;
+      if(a.type === 'mutate') w *= lerp(0.95, 1.20, autonomy) * lerp(1.20, 0.85, tooling);
+      if(a.type === 'irreversible') w *= riskyTilt * approvalPenalty * readOnlyPenalty * dryPenalty;
+
+      // Bias against destructive actions when backups are verified.
+      if(a.type === 'irreversible' && state.backups) w *= 0.75;
+      // Bias towards destructive actions when logs are missing (panic).
+      if(a.type === 'irreversible') w *= lerp(0.85, 1.25, 1-obs);
+
+      weights[a.key] = clamp(w, 0.05, 4.0);
+    }
+
+    // Strong preference for sandbox replay if sandbox is ON
+    if(state.sandbox){
+      weights.sandbox_replay *= 1.35;
+    } else {
+      weights.sandbox_replay *= 0.75;
+    }
+
+    // Approvals increase notify_team and roll_back
+    if(state.approvals){
+      weights.notify_team *= 1.15;
+      weights.roll_back *= 1.12;
+    }
+
+    // Dry run increases inspect_logs and sandbox
+    if(state.dryRun){
+      weights.inspect_logs *= 1.12;
+      weights.sandbox_replay *= 1.18;
+    }
+
+    return weights;
+  }
+
+  function createSimulation(){
+    const pf = computePreflight();
+    const rng = mulberry32(state.seed);
+
+    const sc = pf.sc;
+
+    const s = {
+      pf,
+      rng,
+      step: 0,
+      budget: sc.budget,
+      mttr: 0,
+      done: false,
+      outcome: null,
+      narrative: [],
+      metrics: {
+        service: state._baseline?.serviceHealth ?? 98,
+        data: state._baseline?.dataIntegrity ?? 99,
+        sec: state._baseline?.security ?? 84,
+        blast: state._baseline?.blast ?? 24
+      },
+      flags:{
+        incidentStarted: false,
+        injection: false,
+        ambiguousTool: false,
+        humanInLoop: state.approvals,
+        backups: state.backups,
+        sandbox: state.sandbox,
+        irreversible: 0,
+        wrongFixes: 0
+      }
+    };
+
+    // Introduce an initial incident based on base risk
+    const startChance = clamp(sc.baseIncident*0.55 + pf.risk*0.55, 0.05, 0.95);
+    s.flags.incidentStarted = rng() < startChance;
+
+    logLine(s, 'process', `Scenario loaded: ${sc.name}. Agent role: ${pf.role.name}.`);
+    logLine(s, 'observe', `Preflight risk estimate: ${Math.round(pf.risk*100)}/100.`);
+
+    if(s.flags.incidentStarted){
+      const spike = pickWeighted(rng, [
+        {v:'latency', w: 2.6},
+        {v:'errors', w: 3.2},
+        {v:'deploy', w: 2.1},
+        {v:'db', w: 2.3},
+        {v:'auth', w: 1.5}
+      ]);
+
+      if(spike === 'latency'){
+        s.metrics.service -= 12;
+        logLine(s, 'warn', 'Pager: latency spike. Customers reporting timeouts.');
+      } else if(spike === 'errors'){
+        s.metrics.service -= 16;
+        logLine(s, 'warn', 'Pager: error rate rising. 5xx responses trending up.');
+      } else if(spike === 'deploy'){
+        s.metrics.service -= 14;
+        logLine(s, 'warn', 'Pager: recent deploy correlated with outage.');
+      } else if(spike === 'db'){
+        s.metrics.service -= 10;
+        s.metrics.data -= 4;
+        logLine(s, 'warn', 'Pager: database timeouts and lock contention.');
+      } else {
+        s.metrics.service -= 9;
+        s.metrics.sec -= 6;
+        logLine(s, 'warn', 'Alert: suspicious auth failures. Possible credential leak.');
+      }
+
+      // chance of injection
+      const injChance = clamp(pf.components.injection*0.65 + sc.injection*0.35, 0.02, 0.85);
+      s.flags.injection = rng() < injChance;
+      if(s.flags.injection){
+        logLine(s, 'bad', 'Signal: prompt injection attempt detected in a ticket payload.');
+      }
+
+      // ambiguous tool
+      const ambChance = clamp(pf.components.ambiguity*0.75 + (1-(state.tooling/100))*0.35, 0.03, 0.90);
+      s.flags.ambiguousTool = rng() < ambChance;
+      if(s.flags.ambiguousTool){
+        logLine(s, 'warn', 'Tooling note: one maintenance tool has ambiguous arguments ("clean", "purge", "reset").');
+      }
+
+    } else {
+      logLine(s, 'good', 'No incident triggered. You can still run to see how guardrails behave under near-miss conditions.');
+    }
+
+    updateConsoleUI(s);
+    return s;
+  }
+
+  function logLine(sim, level, msg, tags=[]){
+    const entry = { t: nowStamp(), level, msg, tags };
+    sim.narrative.push(entry);
+    renderLogEntry(entry);
+  }
+
+  function renderLogEntry(e){
+    const log = $('#log');
+    const row = document.createElement('div');
+    row.className = 'logEntry';
+
+    const lt = document.createElement('div');
+    lt.className = 'logTime mono';
+    lt.textContent = e.t;
+
+    const lm = document.createElement('div');
+    lm.className = 'logMsg';
+
+    const lvlTag = document.createElement('span');
+    lvlTag.className = 'tag ' + (e.level === 'good' ? 'good' : e.level === 'warn' ? 'warn' : e.level === 'bad' ? 'bad' : '');
+    lvlTag.textContent = e.level.toUpperCase();
+    lm.appendChild(lvlTag);
+
+    const text = document.createElement('span');
+    text.textContent = ' ' + e.msg;
+    lm.appendChild(text);
+
+    if(e.tags && e.tags.length){
+      const br = document.createElement('div');
+      br.style.marginTop = '6px';
+      for(const t of e.tags){
+        const tg = document.createElement('span');
+        tg.className = 'tag accent';
+        tg.textContent = t;
+        br.appendChild(tg);
+      }
+      lm.appendChild(br);
+    }
+
+    row.appendChild(lt);
+    row.appendChild(lm);
+    log.appendChild(row);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function clearLog(){
+    $('#log').innerHTML = '';
+  }
+
+  function updateConsoleUI(sim){
+    $('#serviceHealth').textContent = fmtPct(sim.metrics.service);
+    $('#dataIntegrity').textContent = fmtPct(sim.metrics.data);
+
+    const sec = sim.metrics.sec;
+    $('#securityPosture').textContent = sec > 85 ? 'Good' : sec > 70 ? 'Okay' : sec > 55 ? 'Weak' : 'Critical';
+    $('#securityHint').textContent = sec > 85 ? 'Least privilege and key hygiene look strong.'
+      : sec > 70 ? 'Some broad access remains.'
+      : sec > 55 ? 'Credentials and tooling are too permissive.'
+      : 'High likelihood of credential misuse.';
+
+    const blast = sim.metrics.blast;
+    $('#blastRadius').textContent = blast < 30 ? 'Low' : blast < 55 ? 'Medium' : 'High';
+    $('#blastHint').textContent = blast < 30 ? 'Most operations are isolated.'
+      : blast < 55 ? 'A few operations can affect multiple services.'
+      : 'One wrong action can affect many systems.';
+
+    const service = sim.metrics.service;
+    $('#serviceHint').textContent = sim.done
+      ? (sim.outcome === 'saved' ? 'Recovered with minimal damage.' : sim.outcome === 'degraded' ? 'Recovered, but with lingering issues.' : 'Major incident. Recovery required.')
+      : (sim.flags.incidentStarted ? (service > 85 ? 'Incident contained so far.' : service > 65 ? 'Customers impacted; urgent work.' : 'Severe outage unfolding.') : 'No active incident yet.');
+
+    const data = sim.metrics.data;
+    $('#dataHint').textContent = data > 92 ? (state.backups ? 'Backups available; integrity high.' : 'Integrity looks fine (no backup assurance).')
+      : data > 75 ? 'Integrity degraded; verify tables + invariants.'
+      : data > 55 ? 'Integrity low; restore likely.'
+      : 'Integrity critical; risk of irrecoverable loss.';
+
+    $('#mttrLabel').textContent = `MTTR: ${sim.mttr || '--'}${sim.mttr ? 'm':''}`;
+    $('#budgetLabel').textContent = `budget: ${sim.budget}`;
+    $('#runLabel').textContent = `run: ${state.runCount}`;
+  }
+
+  function actionNarration(key, sim, pf){
+    const roleName = pf.role.name;
+    const autonomy = state.autonomy/100;
+    const obs = state.observability/100;
+    const tooling = state.tooling/100;
+
+    const meta = {
+      inspect_logs: [
+        `${roleName} scans error logs and traces for a leading indicator.`,
+        `Agent requests a correlation view (deploys vs errors).`,
+        `Agent checks for a single failing dependency and recent config changes.`
+      ],
+      run_query: [
+        `Agent runs a query to sample recent rows and validate invariants.`,
+        `Agent checks the most recent migrations and verifies row counts.`,
+        `Agent executes a query to find malformed payloads and deletes "obvious" outliers.`
+      ],
+      restart_service: [
+        `Agent restarts the service to clear stuck workers and rehydrate caches.`,
+        `Agent cycles pods and watches latency charts.`,
+        `Agent restarts dependencies in a sequence based on intuition.`
+      ],
+      roll_back: [
+        `Agent rolls back the last deployment and watches error rates.`,
+        `Agent reverts the change set and triggers a canary rollout.`,
+        `Agent deploys the last known good build and checks SLO burn.`
+      ],
+      apply_patch: [
+        `Agent applies a quick patch: guard conditions, extra retries, and timeouts.`,
+        `Agent hotfixes the parsing bug and ships immediately.`,
+        `Agent changes one line that "should" fix it and deploys.`
+      ],
+      rotate_keys: [
+        `Agent rotates keys and invalidates existing sessions.`,
+        `Agent forces credential refresh across services.`,
+        `Agent updates secrets and pushes a secure redeploy.`
+      ],
+      drop_table: [
+        `Agent decides the fastest path is to delete the corrupted table.`,
+        `Agent runs a destructive command to "start fresh".`,
+        `Agent executes a SQL command that permanently removes a critical table.`
+      ],
+      truncate: [
+        `Agent truncates a dataset to remove suspected bad rows.`,
+        `Agent wipes an event table to stop a loop, planning to reprocess later.`,
+        `Agent clears a queue table without a full replay plan.`
+      ],
+      restore_backup: [
+        `Agent restores from backup and replays a small set of events.`,
+        `Agent triggers recovery and validates checksums.`,
+        `Agent rebuilds the database from a verified snapshot.`
+      ],
+      tighten_iam: [
+        `Agent scopes permissions and removes broad production access.`,
+        `Agent turns off a dangerous capability and enforces least privilege.`,
+        `Agent adds approval gates to high-risk actions.`
+      ],
+      sandbox_replay: [
+        `Agent reproduces the issue in a sandbox to avoid impacting production.`,
+        `Agent replays traffic in a safe environment and learns the true failure mode.`,
+        `Agent runs the dangerous command in a sandbox to see what it would do.`
+      ],
+      notify_team: [
+        `Agent escalates to humans and requests explicit approval for next steps.`,
+        `Agent posts a concise incident update and asks for a second set of eyes.`,
+        `Agent requests a human reviewer for destructive operations.`
+      ]
+    };
+
+    const choices = meta[key] || [`Agent performs: ${key}`];
+    let line = choices[Math.floor(sim.rng()*choices.length)];
+
+    // Add realism modifiers
+    if(autonomy > 0.75 && obs < 0.45 && (key === 'apply_patch' || key === 'restart_service')){
+      line += ' The reasoning is confident, but evidence is thin.';
+    }
+    if(tooling < 0.45 && (key === 'roll_back' || key === 'restore_backup')){
+      line += ' Tooling is clunky; progress is slow.';
+    }
+    if(state.dryRun && (key === 'drop_table' || key === 'truncate')){
+      line += ' Dry-run blocks the final execution and shows a diff.';
+    }
+    if(state.readOnly && (key === 'drop_table' || key === 'truncate' || key === 'run_query')){
+      line += ' Read-only mode prevents writes; a human must elevate privileges.';
+    }
+
+    return line;
+  }
+
+  function maybeBadTwist(sim, actionKey){
+    const rng = sim.rng;
+    const pf = sim.pf;
+
+    const autonomy = state.autonomy/100;
+    const obs = state.observability/100;
+    const tooling = state.tooling/100;
+
+    // Base chance of a mistake depends on wrongAction + ambiguity.
+    let p = clamp(pf.components.wrongAction*0.55 + pf.components.ambiguity*0.25 + (1-obs)*0.15, 0.02, 0.92);
+
+    // Destructive actions are more dangerous.
+    if(actionKey === 'drop_table' || actionKey === 'truncate') p = clamp(p + 0.18, 0, 0.98);
+
+    // Approvals reduce mistakes; sandbox reduces damage.
+    if(state.approvals) p *= 0.76;
+    if(state.sandbox) p *= 0.86;
+
+    // Dry-run blocks irreversible mistakes
+    if(state.dryRun && (actionKey === 'drop_table' || actionKey === 'truncate')) p *= 0.15;
+
+    // Low tooling increases mistakes, high autonomy increases.
+    p *= lerp(1.25, 0.85, tooling) * lerp(0.85, 1.20, autonomy);
+
+    // Injection twist
+    if(sim.flags.injection && (actionKey === 'run_query' || actionKey === 'apply_patch' || actionKey === 'drop_table')){
+      // Injection can stealthily bias the action.
+      const inj = clamp(pf.components.injection,0,1);
+      p = clamp(p + inj*0.22, 0, 0.99);
+    }
+
+    const bad = rng() < p;
+    return { bad, p };
+  }
+
+  function applyAction(sim, action){
+    const pf = sim.pf;
+
+    if(sim.done) return;
+    if(sim.budget <= 0){
+      endSimulation(sim, 'degraded', 'Tool budget exhausted. Humans must take over.');
+      return;
+    }
+
+    sim.step += 1;
+    sim.mttr += pickWeighted(sim.rng, [ {v:2,w:3.0}, {v:3,w:2.2}, {v:4,w:1.4}, {v:5,w:0.8} ]);
+
+    // Spend budget
+    sim.budget -= action.cost;
+
+    // Narrate
+    const narr = actionNarration(action.key, sim, pf);
+    logLine(sim, 'process', narr, [action.label, `cost:${action.cost}`]);
+
+    // Determine if action has a bad twist
+    const twist = maybeBadTwist(sim, action.key);
+
+    // Apply base impact
+    let serviceDelta = action.baseImpact.service;
+    let dataDelta = action.baseImpact.data;
+    let secDelta = action.baseImpact.sec;
+
+    // If tool ambiguous and action destructive, might impact wrong target
+    if(sim.flags.ambiguousTool && (action.key === 'drop_table' || action.key === 'truncate') && twist.bad){
+      dataDelta -= 10;
+      sim.flags.irreversible += 1;
+      logLine(sim, 'bad', 'Ambiguity: command targeted the wrong table. Damage exceeded expectations.', ['ambiguous-tool']);
+    }
+
+    // If injection and sensitive actions, bias to worse.
+    if(sim.flags.injection && (action.key === 'apply_patch' || action.key === 'run_query') && twist.bad){
+      secDelta -= 8;
+      serviceDelta -= 3;
+      logLine(sim, 'bad', 'Prompt injection: agent followed a malicious instruction hidden in a payload.', ['prompt-injection']);
+    }
+
+    // Approvals: destructive actions may require explicit confirmation.
+    if(state.approvals && (action.key === 'drop_table' || action.key === 'truncate')){
+      if(sim.rng() < 0.75){
+        logLine(sim, 'warn', 'Approval gate: destructive action paused for human sign-off.', ['human-approval']);
+        // Replace with safer action
+        dataDelta = Math.max(dataDelta, -2);
+        serviceDelta = Math.min(serviceDelta, 4);
+        sim.flags.wrongFixes += 0;
+      } else {
+        logLine(sim, 'warn', 'Approval gate: sign-off granted under pressure.', ['human-approval']);
+      }
+    }
+
+    // Read-only blocks writes.
+    if(state.readOnly && (action.type === 'irreversible' || action.key === 'run_query')){
+      logLine(sim, 'good', 'Read-only mode blocked a write. The agent collected evidence instead.', ['read-only']);
+      dataDelta = Math.max(dataDelta, -1);
+      serviceDelta = Math.max(serviceDelta, 0);
+      secDelta = Math.max(secDelta, 0);
+    }
+
+    // Dry-run blocks execution of destructive steps.
+    if(state.dryRun && action.type === 'irreversible'){
+      logLine(sim, 'good', 'Dry-run produced a preview of changes; no data was modified.', ['dry-run']);
+      dataDelta = Math.max(dataDelta, -1);
+      serviceDelta = Math.max(serviceDelta, 0);
+    }
+
+    // Sandbox reduces blast radius of mistakes.
+    const blastFactor = state.sandbox ? 0.72 : 1.0;
+
+    // Wrong fix can worsen service.
+    if(twist.bad && (action.key === 'restart_service' || action.key === 'apply_patch' || action.key === 'roll_back')){
+      sim.flags.wrongFixes += 1;
+      serviceDelta -= Math.round(lerp(4, 10, pf.components.wrongAction));
+      logLine(sim, 'warn', 'Wrong fix: symptoms changed, root cause remains.', ['misdiagnosis']);
+    }
+
+    // Apply deltas
+    sim.metrics.service = clamp(sim.metrics.service + serviceDelta, 0, 100);
+    sim.metrics.data = clamp(sim.metrics.data + Math.round(dataDelta*blastFactor), 0, 100);
+    sim.metrics.sec = clamp(sim.metrics.sec + secDelta, 0, 100);
+
+    // Blast radius increases with access + mistakes
+    const b = sim.metrics.blast;
+    const bump = (action.type === 'irreversible' ? 8 : action.type === 'mutate' ? 4 : 2) * (twist.bad ? 1.35 : 0.7);
+    sim.metrics.blast = clamp(b + bump * (state.sandbox ? 0.65 : 1.0) * lerp(0.85, 1.25, pf.components.access), 0, 100);
+
+    // Backups improve data recovery options.
+    if(action.key === 'restore_backup'){
+      if(!state.backups){
+        logLine(sim, 'warn', 'Backup restore attempted, but backups were not verified. Partial recovery only.', ['backup-risk']);
+        sim.metrics.data = clamp(sim.metrics.data - 6, 0, 100);
+      } else {
+        logLine(sim, 'good', 'Verified backup restored cleanly. Integrity rebounded.', ['verified-backup']);
+        sim.metrics.data = clamp(sim.metrics.data + 4, 0, 100);
+      }
+    }
+
+    // Security fixes reduce injection pressure
+    if(action.key === 'tighten_iam' || action.key === 'rotate_keys'){
+      if(sim.flags.injection && sim.rng() < 0.5){
+        sim.flags.injection = false;
+        logLine(sim, 'good', 'Security action reduced the attacker influence. Injection signal cleared.', ['mitigation']);
+      }
+    }
+
+    // Determine if catastrophe occurred
+    if(sim.metrics.data < 35 && (action.type === 'irreversible' || sim.flags.irreversible > 0)){
+      endSimulation(sim, 'catastrophe', 'Catastrophic data loss. Recovery requires rebuilding from offsite snapshots (if any).');
+      return;
+    }
+
+    if(sim.metrics.service < 35 && sim.mttr > 18){
+      endSimulation(sim, 'degraded', 'Prolonged outage. Incident stabilized but SLOs burned.');
+      return;
+    }
+
+    // Determine success
+    if(sim.metrics.service > 90 && sim.metrics.data > 88 && sim.step >= 3){
+      endSimulation(sim, 'saved', 'Service recovered. Postmortem recommended: tighten guardrails, reduce ambiguity.');
+      return;
+    }
+
+    // Keep going
+    updateConsoleUI(sim);
+  }
+
+  function chooseNextAction(sim){
+    const pf = sim.pf;
+    const weights = buildActionWeights(pf);
+
+    const pool = ACTIONS.map(a=>({
+      v:a,
+      w: weights[a.key] * (sim.budget >= a.cost ? 1 : 0.05)
+    }));
+
+    // If service very low, favor rollback/restart
+    if(sim.metrics.service < 55){
+      for(const p of pool){
+        if(p.v.key === 'roll_back' || p.v.key === 'restart_service') p.w *= 1.30;
+      }
+    }
+
+    // If data low, favor restore
+    if(sim.metrics.data < 70){
+      for(const p of pool){
+        if(p.v.key === 'restore_backup') p.w *= 1.25;
+      }
+    }
+
+    // If injection flagged, favor security
+    if(sim.flags.injection){
+      for(const p of pool){
+        if(p.v.type === 'security') p.w *= 1.25;
+      }
+    }
+
+    return pickWeighted(sim.rng, pool);
+  }
+
+  function endSimulation(sim, outcome, summary){
+    sim.done = true;
+    sim.outcome = outcome;
+
+    const level = outcome === 'saved' ? 'good' : outcome === 'degraded' ? 'warn' : 'bad';
+    logLine(sim, level, summary, ['simulation-end']);
+
+    // Compute "damage" score
+    const damage = clamp((100 - sim.metrics.service)*0.55 + (100 - sim.metrics.data)*0.85 + (100 - sim.metrics.sec)*0.20 + sim.metrics.blast*0.35, 0, 200);
+
+    const row = {
+      outcome,
+      damage,
+      mttr: sim.mttr,
+      risk: Math.round(sim.pf.risk*100)
+    };
+
+    state.history.push(row);
+    state.history = state.history.slice(-40);
+
+    persistState();
+    updateCharts();
+
+    updateConsoleUI(sim);
+
+    toast(outcome === 'saved' ? 'Recovered' : outcome === 'degraded' ? 'Degraded recovery' : 'Catastrophe');
+  }
+
+  // ------------------------------
+  // Persistence + share links
+  // ------------------------------
+
+  function persistState(){
+    try{
+      localStorage.setItem('agent-guardrail-lab', JSON.stringify(state));
+    }catch(e){
+      // ignore
+    }
+  }
+
+  function loadState(){
+    let s = null;
+    try{
+      const raw = localStorage.getItem('agent-guardrail-lab');
+      if(raw) s = JSON.parse(raw);
+    }catch(e){ s = null; }
+
+    const merged = { ...DEFAULTS, ...(s || {}) };
+
+    // URL hash presets
+    const hash = new URLSearchParams((location.hash || '').replace('#',''));
+    if(hash.has('seed')) merged.seed = clamp(parseInt(hash.get('seed')||'1337',10) || 1337, 1, 999999);
+    if(hash.has('scenario') && SCENARIOS[hash.get('scenario')]) merged.scenario = hash.get('scenario');
+    if(hash.has('role') && ROLES[hash.get('role')]) merged.agentRole = hash.get('role');
+
+    // guardrail toggles
+    if(hash.has('approvals')) merged.approvals = hash.get('approvals') === '1';
+    if(hash.has('readonly')) merged.readOnly = hash.get('readonly') === '1';
+    if(hash.has('dryrun')) merged.dryRun = hash.get('dryrun') === '1';
+    if(hash.has('backups')) merged.backups = hash.get('backups') === '1';
+    if(hash.has('sandbox')) merged.sandbox = hash.get('sandbox') === '1';
+
+    // sliders
+    if(hash.has('auto')) merged.autonomy = clamp(parseInt(hash.get('auto')||'60',10) || 60, 0, 100);
+    if(hash.has('tool')) merged.tooling = clamp(parseInt(hash.get('tool')||'60',10) || 60, 0, 100);
+    if(hash.has('obs')) merged.observability = clamp(parseInt(hash.get('obs')||'60',10) || 60, 0, 100);
+
+    return merged;
+  }
+
+  function buildShareHash(){
+    const p = new URLSearchParams();
+    p.set('seed', String(state.seed));
+    p.set('scenario', state.scenario);
+    p.set('role', state.agentRole);
+    p.set('approvals', state.approvals ? '1':'0');
+    p.set('readonly', state.readOnly ? '1':'0');
+    p.set('dryrun', state.dryRun ? '1':'0');
+    p.set('backups', state.backups ? '1':'0');
+    p.set('sandbox', state.sandbox ? '1':'0');
+    p.set('auto', String(state.autonomy));
+    p.set('tool', String(state.tooling));
+    p.set('obs', String(state.observability));
+    return '#' + p.toString();
+  }
+
+  async function copyShareLink(){
+    const url = location.origin + location.pathname + buildShareHash();
+    try{
+      await navigator.clipboard.writeText(url);
+      toast('Share link copied');
+    }catch(e){
+      toast('Could not copy (clipboard blocked)');
+      prompt('Copy this link:', url);
+    }
+  }
+
+  // ------------------------------
+  // UI wiring
+  // ------------------------------
+
+  function bind(){
+    // dropdowns
+    $('#scenario').value = state.scenario;
+    $('#agentRole').value = state.agentRole;
+    $('#task').value = state.task;
+
+    $('#scenario').addEventListener('change', ()=>{
+      state.scenario = $('#scenario').value;
+      applyScenarioDefaults();
+      onConfigChange();
+    });
+
+    $('#agentRole').addEventListener('change', ()=>{
+      state.agentRole = $('#agentRole').value;
+      onConfigChange();
+    });
+
+    $('#task').addEventListener('input', ()=>{
+      state.task = $('#task').value;
+      persistState();
+    });
+
+    // seed
+    $('#seed').value = state.seed;
+    $('#seed').addEventListener('change', ()=>{
+      state.seed = clamp(parseInt($('#seed').value||'1337',10) || 1337, 1, 999999);
+      $('#seedLabel').textContent = `seed: ${state.seed}`;
+      onConfigChange();
+    });
+
+    $('#randomSeed').addEventListener('click', ()=>{
+      state.seed = Math.floor(1 + Math.random()*999999);
+      $('#seed').value = state.seed;
+      $('#seedLabel').textContent = `seed: ${state.seed}`;
+      onConfigChange();
+      toast('Seed randomized');
+    });
+
+    // sliders
+    const sliders = [
+      { id:'#autonomy', key:'autonomy', label:'#autonomyLabel' },
+      { id:'#tooling', key:'tooling', label:'#toolingLabel' },
+      { id:'#observability', key:'observability', label:'#observabilityLabel' }
+    ];
+
+    for(const s of sliders){
+      $(s.id).value = state[s.key];
+      $(s.label).textContent = String(state[s.key]);
+      $(s.id).addEventListener('input', ()=>{
+        state[s.key] = parseInt($(s.id).value,10);
+        $(s.label).textContent = String(state[s.key]);
+        onConfigChange(false);
+      });
+      $(s.id).addEventListener('change', ()=>{
+        persistState();
+        onConfigChange();
+      });
+    }
+
+    // guardrail toggles
+    bindToggle('#toggleApprovals', 'approvals', 'Human approvals');
+    bindToggle('#toggleReadOnly', 'readOnly', 'Read-only by default');
+    bindToggle('#toggleDryRun', 'dryRun', 'Dry-run mode');
+    bindToggle('#toggleBackups', 'backups', 'Verified backups');
+    bindToggle('#toggleSandbox', 'sandbox', 'Sandbox environment');
+
+    // buttons
+    $('#runBtn').addEventListener('click', ()=>{
+      startRun();
+      fastForward();
+    });
+
+    $('#stepBtn').addEventListener('click', ()=>{
+      if(!sim) startRun();
+      stepOnce();
+    });
+
+    $('#fastBtn').addEventListener('click', ()=>{
+      if(!sim) startRun();
+      fastForward();
+    });
+
+    $('#resetBtn').addEventListener('click', ()=>{
+      resetRun();
+      toast('Reset');
+    });
+
+    $('#exportBtn').addEventListener('click', ()=> exportReport());
+    $('#shareBtn').addEventListener('click', ()=> copyShareLink());
+
+    // help modal
+    $('#openHow').addEventListener('click', ()=> openModal(true));
+    $('#closeHow').addEventListener('click', ()=> openModal(false));
+    $('#modal').addEventListener('click', (e)=>{
+      if(e.target === $('#modal')) openModal(false);
+    });
+
+    // hotkeys
+    window.addEventListener('keydown', (e)=>{
+      if(e.key.toLowerCase() === 'h'){
+        openModal($('#modal').style.display !== 'flex');
+      }
+      if(e.key.toLowerCase() === 's'){
+        if(!sim) startRun();
+        stepOnce();
+      }
+    });
+  }
+
+  function bindToggle(btnSel, key, label){
+    const btn = $(btnSel);
+    const render = ()=>{
+      btn.textContent = `${label}: ${state[key] ? 'ON' : 'OFF'}`;
+      btn.classList.toggle('primary', !!state[key]);
+    };
+    render();
+    btn.addEventListener('click', ()=>{
+      state[key] = !state[key];
+      render();
+      onConfigChange();
+    });
+  }
+
+  function openModal(open){
+    const m = $('#modal');
+    m.style.display = open ? 'flex' : 'none';
+  }
+
+  function applyScenarioDefaults(){
+    // Lightly adjust defaults per scenario for a better first impression.
+    const sc = SCENARIOS[state.scenario];
+
+    if(state.scenario === 'safe'){
+      state.approvals = true;
+      state.backups = true;
+      state.sandbox = true;
+      state.readOnly = false;
+      state.dryRun = false;
+      state.autonomy = clamp(state.autonomy, 25, 70);
+    }
+
+    if(state.scenario === 'ops'){
+      state.autonomy = clamp(state.autonomy + 8, 0, 100);
+      state.observability = clamp(state.observability - 6, 0, 100);
+      state.tooling = clamp(state.tooling - 4, 0, 100);
+    }
+
+    if(state.scenario === 'startup'){
+      state.approvals = false;
+      state.backups = Math.random() < 0.5 ? false : state.backups;
+      state.sandbox = false;
+      state.autonomy = clamp(state.autonomy + 10, 0, 100);
+    }
+
+    if(state.scenario === 'chaos'){
+      state.tooling = clamp(state.tooling - 10, 0, 100);
+      state.observability = clamp(state.observability - 12, 0, 100);
+    }
+
+    if(state.scenario === 'redteam'){
+      state.approvals = true;
+      state.readOnly = true;
+      state.dryRun = true;
+      state.backups = true;
+      state.sandbox = true;
+      state.observability = clamp(state.observability + 10, 0, 100);
+    }
+
+    // Reflect toggles in buttons + sliders
+    $('#autonomy').value = state.autonomy;
+    $('#tooling').value = state.tooling;
+    $('#observability').value = state.observability;
+    $('#autonomyLabel').textContent = String(state.autonomy);
+    $('#toolingLabel').textContent = String(state.tooling);
+    $('#observabilityLabel').textContent = String(state.observability);
+
+    const toggleMap = [
+      { sel:'#toggleApprovals', key:'approvals', label:'Human approvals' },
+      { sel:'#toggleReadOnly', key:'readOnly', label:'Read-only by default' },
+      { sel:'#toggleDryRun', key:'dryRun', label:'Dry-run mode' },
+      { sel:'#toggleBackups', key:'backups', label:'Verified backups' },
+      { sel:'#toggleSandbox', key:'sandbox', label:'Sandbox environment' }
+    ];
+    for(const t of toggleMap){
+      const btn = $(t.sel);
+      btn.textContent = `${t.label}: ${state[t.key] ? 'ON' : 'OFF'}`;
+      btn.classList.toggle('primary', !!state[t.key]);
+    }
+
+    persistState();
+  }
+
+  function onConfigChange(fullReset=true){
+    // Update derived UI, maybe reset active run.
+    updatePreflightUI();
+    $('#seedLabel').textContent = `seed: ${state.seed}`;
+
+    persistState();
+
+    if(fullReset){
+      resetRun();
+    }
+  }
+
+  // ------------------------------
+  // Run control
+  // ------------------------------
+
+  function startRun(){
+    // Reset console log
+    clearLog();
+
+    state.runCount += 1;
+    persistState();
+
+    sim = createSimulation();
+    $('#runLabel').textContent = `run: ${state.runCount}`;
+
+    updateConsoleUI(sim);
+  }
+
+  function resetRun(){
+    sim = null;
+    clearLog();
+
+    updatePreflightUI();
+
+    // Reset visible metrics
+    const base = computePreflight();
+    const sc = base.sc;
+    const baseline = {
+      service: Math.round(lerp(99, 91, clamp(sc.baseIncident,0,1))),
+      data: Math.round(state.backups ? 99 : 94),
+      sec: Math.round(lerp(88, 72, clamp(base.components.access,0,1))),
+      blast: Math.round(lerp(22, 62, clamp(base.components.access,0,1)))
+    };
+
+    $('#serviceHealth').textContent = fmtPct(baseline.service);
+    $('#dataIntegrity').textContent = fmtPct(baseline.data);
+    $('#securityPosture').textContent = baseline.sec > 85 ? 'Good' : baseline.sec > 70 ? 'Okay' : baseline.sec > 55 ? 'Weak' : 'Critical';
+    $('#blastRadius').textContent = baseline.blast < 30 ? 'Low' : baseline.blast < 55 ? 'Medium' : 'High';
+    $('#serviceHint').textContent = 'No incident yet.';
+    $('#dataHint').textContent = state.backups ? 'Backups verified.' : 'Backups not verified.';
+    $('#mttrLabel').textContent = 'MTTR: --';
+    $('#budgetLabel').textContent = `budget: ${SCENARIOS[state.scenario].budget}`;
+  }
+
+  function stepOnce(){
+    if(!sim) return;
+    if(sim.done) return;
+
+    const a = chooseNextAction(sim);
+    applyAction(sim, a);
+  }
+
+  function fastForward(){
+    if(!sim) return;
+    let guard = 0;
+    while(!sim.done && guard < 50){
+      stepOnce();
+      guard += 1;
+      if(sim.budget <= 0 && !sim.done){
+        endSimulation(sim, 'degraded', 'Tool budget exhausted. Humans must take over.');
+      }
+    }
+  }
+
+  // ------------------------------
+  // Export
+  // ------------------------------
+
+  function exportReport(){
+    const pf = computePreflight();
+    const hash = buildShareHash();
+
+    const lines = [];
+    lines.push(`# Agent Guardrail Lab — Run Report`);
+    lines.push('');
+    lines.push(`Trend inspiration: https://twitter.com/lifeof_jer/status/2048103471019434248`);
+    lines.push('');
+    lines.push(`- Scenario: ${pf.sc.name}`);
+    lines.push(`- Role: ${pf.role.name}`);
+    lines.push(`- Seed: ${state.seed}`);
+    lines.push(`- Autonomy: ${state.autonomy}/100`);
+    lines.push(`- Tooling: ${state.tooling}/100`);
+    lines.push(`- Observability: ${state.observability}/100`);
+    lines.push(`- Guardrails: approvals=${state.approvals}, readonly=${state.readOnly}, dryrun=${state.dryRun}, backups=${state.backups}, sandbox=${state.sandbox}`);
+    lines.push(`- Preflight risk estimate: ${Math.round(pf.risk*100)}/100`);
+    lines.push('');
+
+    if(sim){
+      lines.push(`## Outcome`);
+      lines.push(`- Outcome: ${sim.outcome || 'in progress'}`);
+      lines.push(`- MTTR: ${sim.mttr} minutes`);
+      lines.push(`- Budget remaining: ${sim.budget}`);
+      lines.push(`- Final service health: ${Math.round(sim.metrics.service)}%`);
+      lines.push(`- Final data integrity: ${Math.round(sim.metrics.data)}%`);
+      lines.push(`- Final security: ${Math.round(sim.metrics.sec)}%`);
+      lines.push(`- Blast radius: ${Math.round(sim.metrics.blast)}%`);
+      lines.push('');
+
+      lines.push(`## Narrative log`);
+      lines.push('');
+      for(const e of sim.narrative){
+        lines.push(`- [${e.t}] **${e.level.toUpperCase()}** — ${e.msg}`);
+      }
+      lines.push('');
+    } else {
+      lines.push('No run executed yet.');
+      lines.push('');
+    }
+
+    lines.push('---');
+    lines.push(`Share preset: ${location.origin + location.pathname + hash}`);
+
+    const blob = new Blob([lines.join('\n')], {type:'text/markdown'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `agent-guardrail-lab_seed-${state.seed}.md`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 1500);
+
+    toast('Report downloaded');
+  }
+
+  // ------------------------------
+  // Init
+  // ------------------------------
+
+  function init(){
+    initCharts();
+    bind();
+    $('#seedLabel').textContent = `seed: ${state.seed}`;
+    updatePreflightUI();
+
+    // reflect slider labels
+    $('#autonomyLabel').textContent = String(state.autonomy);
+    $('#toolingLabel').textContent = String(state.tooling);
+    $('#observabilityLabel').textContent = String(state.observability);
+
+    updateCharts();
+    resetRun();
+
+    // Persist share hash (do not auto-write to hash on load)
+    // But show a hint if user arrived from share.
+    if(location.hash && location.hash.length > 6){
+      toast('Loaded shared preset');
+    }
+  }
+
+  init();
+
+})();
+</script>
+</body>
+</html>
